@@ -1,8 +1,5 @@
 package whs.bot.common.net;
 
-import whs.bot.common.net.requests.Request;
-import whs.bot.common.net.requests.Response;
-
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Future;
 
