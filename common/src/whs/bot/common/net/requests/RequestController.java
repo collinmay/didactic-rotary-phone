@@ -2,6 +2,7 @@ package whs.bot.common.net.requests;
 
 import whs.bot.common.net.PacketHandler;
 import whs.bot.common.net.PacketTunnel;
+import whs.bot.common.net.dispatchers.PacketDispatcher;
 
 import java.util.concurrent.Future;
 
@@ -21,7 +22,7 @@ public class RequestController implements PacketHandler<Response> {
     //}
 
     @Override
-    public void handle(Response p) throws Exception {
+    public void handle(PacketDispatcher dispatch, Response p) throws Exception {
 
     }
 }

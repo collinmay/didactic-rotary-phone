@@ -1,4 +1,4 @@
-package whs.bot.common.net.dispatchers.impl;
+package whs.bot.common.net.dispatchers;
 
 import whs.bot.common.net.PacketTunnel;
 import whs.bot.common.net.dispatchers.PacketDispatcher;
@@ -30,6 +30,7 @@ public abstract class AbstractPacketDispatcher implements PacketDispatcher {
     @Override
     public void dispatch(ByteBuffer buf) throws DispatchException, PacketHandlingException {
         int type = buf.getShort();
+        System.out.println("dispatch " + type);
         if(!readerMap.containsKey(type)) {
             throw new DispatchException("No such packet handler for ID " + type);
         }
@@ -43,6 +44,7 @@ public abstract class AbstractPacketDispatcher implements PacketDispatcher {
 
     @Override
     public void send(Packet p) {
+        System.out.println("send " + p.getClass().getName());
         tunnel.send(p);
     }
 

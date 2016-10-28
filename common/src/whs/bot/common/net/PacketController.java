@@ -1,9 +1,17 @@
 package whs.bot.common.net;
 
+import whs.bot.common.net.dispatchers.PacketDispatcher;
+import whs.bot.common.net.dispatchers.builders.AsynchronousPacketDispatcherBuilder;
+import whs.bot.common.net.dispatchers.builders.DispatcherBuilder;
+import whs.bot.common.net.dispatchers.Dispatcher;
+import whs.bot.common.net.exceptions.BadTunnelHandshakeException;
+import whs.bot.common.net.exceptions.DispatchException;
+import whs.bot.common.net.exceptions.InvalidTunnelStateException;
+import whs.bot.common.net.exceptions.NoSuchTunnelException;
+import whs.bot.common.net.exceptions.PacketHandlingException;
+import whs.bot.common.net.exceptions.TunnelWasNotAcceptedException;
 import whs.bot.common.net.packets.TunnelCreatePacket;
 import whs.bot.common.net.packets.TunnelHandshakePacket;
-import whs.bot.common.net.requests.Request;
-import whs.bot.common.net.requests.Response;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -14,7 +22,6 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Future;
 import java.util.concurrent.LinkedBlockingQueue;
 
 /**
@@ -36,47 +43,44 @@ public class PacketController {
         this.channel = channel;
         this.outputQueue = new LinkedBlockingQueue<>(100);
         this.warningQueue = new LinkedBlockingQueue<>();
-        this.controllerTun = new PacketTunnelImpl(0, new AsyncDispatcherBuilder()
-                .packet(1, TunnelCreatePacket.getReader(), (packet) -> {
-                    synchronized(tunnelStates) {
-                        int id = packet.getTunnelID();
-                        byte[] handshake = packet.getHandshake();
-                        TunnelConnectionState state = tunnelStates.get(id);
-                        if(state == null) {
-                            state = new TunnelConnectionState();
-                            state.id = id;
-                            state.state = TunnelConnState.WAITING_FOR_LOCAL_CONNECT;
-                            state.handshake = handshake;
-                            tunnelStates.put(id, state);
+        this.controllerTun = new PacketTunnelImpl(0, new AsynchronousPacketDispatcherBuilder().packet(1, TunnelCreatePacket.getReader(), (dispatch, packet) -> {
+            synchronized (tunnelStates) {
+                int id = packet.getTunnelID();
+                byte[] handshake = packet.getHandshake();
+                TunnelConnectionState state = tunnelStates.get(id);
+                if (state == null) {
+                    state = new TunnelConnectionState();
+                    state.id = id;
+                    state.state = TunnelConnState.WAITING_FOR_LOCAL_CONNECT;
+                    state.handshake = handshake;
+                    tunnelStates.put(id, state);
+                } else {
+                    if (state.state == TunnelConnState.WAITING_FOR_REMOTE_OPEN) {
+                        if (Arrays.equals(handshake, state.handshake)) {
+                            state.completableFuture.complete(new PacketTunnelImpl(id, state.dispatcherBuilder));
                         } else {
-                            if(state.state == TunnelConnState.WAITING_FOR_REMOTE_OPEN) {
-                                if(Arrays.equals(handshake, state.handshake)) {
-                                    state.completableFuture.complete(new PacketTunnelImpl(id, state.dispatcher));
-                                } else {
-                                    state.completableFuture.completeExceptionally(new BadTunnelHandshakeException(handshake, state.handshake));
-                                }
-                            } else {
-                                throw new InvalidTunnelStateException();
-                            }
+                            state.completableFuture.completeExceptionally(new BadTunnelHandshakeException(handshake, state.handshake));
                         }
+                    } else {
+                        throw new InvalidTunnelStateException();
                     }
-                })
-                .packet(2, TunnelHandshakePacket.getReader(), (packet) -> {
-                    synchronized(tunnelStates) {
-                        int id = packet.getTunnelID();
-                        boolean accepted = packet.wasAccepted();
-                        TunnelConnectionState state = tunnelStates.get(id);
-                        if(state == null) {
-                            throw new NoSuchTunnelException(id);
-                        }
-                        if(accepted) {
-                            state.completableFuture.complete(new PacketTunnelImpl(id, state.dispatcher));
-                        } else {
-                            state.completableFuture.completeExceptionally(new TunnelWasNotAcceptedException());
-                        }
-                    }
-                })
-                .build().getAsDispatcher());
+                }
+            }
+        }).packet(2, TunnelHandshakePacket.getReader(), (dispatch, packet) -> {
+            synchronized (tunnelStates) {
+                int id = packet.getTunnelID();
+                boolean accepted = packet.wasAccepted();
+                TunnelConnectionState state = tunnelStates.get(id);
+                if (state == null) {
+                    throw new NoSuchTunnelException(id);
+                }
+                if (accepted) {
+                    state.completableFuture.complete(new PacketTunnelImpl(id, state.dispatcherBuilder));
+                } else {
+                    state.completableFuture.completeExceptionally(new TunnelWasNotAcceptedException());
+                }
+            }
+        }));
         this.tunnels.put(0, controllerTun);
 
         Thread inputThread = new Thread(() -> {
@@ -93,11 +97,11 @@ public class PacketController {
                     int length = inputBuffer.getShort();
                     inputBuffer.clear();
                     inputBuffer.limit(length);
-                    while(inputBuffer.position() < length) {
+                    while (inputBuffer.position() < length) {
                         channel.read(inputBuffer);
                     }
                     inputBuffer.flip();
-                    if(tunnels.containsKey(tunnelID)) {
+                    if (tunnels.containsKey(tunnelID)) {
                         try {
                             tunnels.get(tunnelID).dispatch(inputBuffer);
                         } catch (DispatchException | PacketHandlingException e) {
@@ -108,9 +112,9 @@ public class PacketController {
                     }
                     inputBuffer.clear();
                 }
-            } catch(IOException e) {
+            } catch (IOException e) {
                 isClosed = true;
-                if(!(e instanceof ClosedChannelException)) {
+                if (!(e instanceof ClosedChannelException)) {
                     e.printStackTrace();
                 }
             }
@@ -148,9 +152,9 @@ public class PacketController {
                     } catch (InterruptedException ignored) {
                     }
                 }
-            } catch(IOException e) {
+            } catch (IOException e) {
                 isClosed = true;
-                if(!(e instanceof ClosedChannelException)) {
+                if (!(e instanceof ClosedChannelException)) {
                     e.printStackTrace();
                 }
             }
@@ -169,18 +173,18 @@ public class PacketController {
         return tunnelID;
     }
 
-    public PacketTunnel.Connection openTunnel(byte[] handshake, PacketDispatcher dispatcher) {
+    public <T extends Dispatcher> PacketTunnel.Connection<T> openTunnel(byte[] handshake, DispatcherBuilder<T> dispatcherBuilder) {
         synchronized(tunnelStates) {
-            return openTunnel(allocTunnelID(), handshake, dispatcher);
+            return openTunnel(allocTunnelID(), handshake, dispatcherBuilder);
         }
     }
 
-    public PacketTunnel.Connection openTunnel(int id, byte[] handshake, PacketDispatcher dispatcher) {
+    public <T extends Dispatcher> PacketTunnel.Connection<T> openTunnel(int id, byte[] handshake, DispatcherBuilder<T> dispatcherBuilder) {
         synchronized(tunnelStates) {
             TunnelConnectionState state = new TunnelConnectionState();
             state.id = id;
             state.state = TunnelConnState.WAITING_FOR_REMOTE_CONNECT;
-            state.dispatcher = dispatcher;
+            state.dispatcherBuilder = dispatcherBuilder;
             tunnelStates.put(id, state);
 
             controllerTun.send(new TunnelCreatePacket((short) id, handshake));
@@ -189,19 +193,19 @@ public class PacketController {
         }
     }
 
-    public PacketTunnel.Connection connectTunnel(int id, byte[] handshake, PacketDispatcher dispatcher) {
-        synchronized(tunnelStates) {
+    public <T extends Dispatcher> PacketTunnel.Connection<T> connectTunnel(int id, byte[] handshake, DispatcherBuilder<T> dispatcher) {
+        synchronized (tunnelStates) {
             TunnelConnectionState state = tunnelStates.get(id);
-            if(state == null) {
+            if (state == null) {
                 state = new TunnelConnectionState();
                 state.id = id;
                 state.state = TunnelConnState.WAITING_FOR_REMOTE_OPEN;
                 state.handshake = handshake;
-                state.dispatcher = dispatcher;
+                state.dispatcherBuilder = dispatcher;
                 tunnelStates.put(id, state);
             } else {
-                if(state.state == TunnelConnState.WAITING_FOR_LOCAL_CONNECT) {
-                    if(Arrays.equals(handshake, state.handshake)) {
+                if (state.state == TunnelConnState.WAITING_FOR_LOCAL_CONNECT) {
+                    if (Arrays.equals(handshake, state.handshake)) {
                         state.completableFuture.complete(new PacketTunnelImpl(id, dispatcher));
                     } else {
                         state.completableFuture.completeExceptionally(new BadTunnelHandshakeException(state.handshake, handshake));
@@ -228,11 +232,11 @@ public class PacketController {
 
     private class PacketTunnelImpl implements PacketTunnel {
         private int id;
-        private PacketDispatcher dispatch;
+        private Dispatcher dispatch;
 
-        private PacketTunnelImpl(int id, PacketDispatcher dispatch) {
+        private PacketTunnelImpl(int id, DispatcherBuilder dispatch) {
             this.id = id;
-            this.dispatch = dispatch;
+            this.dispatch = dispatch.build(this);
         }
 
         @Override
@@ -247,6 +251,10 @@ public class PacketController {
         @Override
         public int getId() {
             return id;
+        }
+
+        public Dispatcher getDispatcher() {
+            return dispatch;
         }
     }
 
@@ -268,26 +276,29 @@ public class PacketController {
         }
     }
 
-    private class TunnelConnectionState implements PacketTunnel.Connection {
-        private CompletableFuture<PacketTunnel> completableFuture = new CompletableFuture<>();
+    private class TunnelConnectionState<T extends Dispatcher> implements PacketTunnel.Connection<T> {
+        private final CompletableFuture<PacketTunnelImpl> completableFuture = new CompletableFuture<>();
+        private final CompletableFuture<T> dispatcherFuture;
         private TunnelConnState state;
         private int id;
         private byte[] handshake;
-        private PacketDispatcher dispatcher;
+        private DispatcherBuilder dispatcherBuilder;
 
         private TunnelConnectionState() {
-            completableFuture.thenAccept((tun) -> {
-                tunnels.put(id, (PacketTunnelImpl) tun);
+            dispatcherFuture = completableFuture.thenApply((tun) -> {
+                tunnels.put(id, tun);
                 if(state != TunnelConnState.WAITING_FOR_REMOTE_CONNECT) {
                     controllerTun.send(new TunnelHandshakePacket((short) id, true));
                 }
                 state = TunnelConnState.CONNECTED;
-            });
-            completableFuture.exceptionally(throwable -> {
+                return tun;
+            }).thenApply((tun) -> (T) tun.getDispatcher());
+            dispatcherFuture.exceptionally(throwable -> {
                 if(state != TunnelConnState.WAITING_FOR_REMOTE_CONNECT) {
                     controllerTun.send(new TunnelHandshakePacket((short) id, false));
                 }
                 state = TunnelConnState.ERROR;
+                throwable.printStackTrace();
                 return null;
             });
         }
@@ -297,8 +308,8 @@ public class PacketController {
             return id;
         }
 
-        public CompletableFuture<PacketTunnel> getFuture() {
-            return completableFuture;
+        public CompletableFuture<T> getFuture() {
+            return dispatcherFuture;
         }
 
     }

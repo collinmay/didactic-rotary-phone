@@ -1,4 +1,4 @@
-package whs.bot.common.net;
+package whs.bot.common.net.exceptions;
 
 import java.util.Arrays;
 

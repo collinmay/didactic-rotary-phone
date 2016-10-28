@@ -5,7 +5,7 @@ import whs.bot.common.net.PacketHandler;
 import whs.bot.common.net.PacketReader;
 import whs.bot.common.net.PacketTunnel;
 import whs.bot.common.net.dispatchers.PacketDispatcher;
-import whs.bot.common.net.dispatchers.impl.AbstractPacketDispatcher;
+import whs.bot.common.net.dispatchers.AbstractPacketDispatcher;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -13,11 +13,11 @@ import java.util.Map;
 /**
  * Created by misson20000 on 9/24/16.
  */
-public class AsyncDispatcherBuilder implements DispatcherBuilder<PacketDispatcher> {
+public class AsynchronousPacketDispatcherBuilder implements DispatcherBuilder<PacketDispatcher> {
     private Map<Integer, PacketReader> readerMap = new HashMap<>();
     private Map<Integer, PacketHandler> handlerMap = new HashMap<>();
 
-    public <T extends Packet> AsyncDispatcherBuilder packet(int id, PacketReader<T> reader, PacketHandler<T> handler) {
+    public <T extends Packet> AsynchronousPacketDispatcherBuilder packet(int id, PacketReader<T> reader, PacketHandler<T> handler) {
         readerMap.put(id, reader);
         handlerMap.put(id, handler);
         return this;
@@ -39,7 +39,7 @@ public class AsyncDispatcherBuilder implements DispatcherBuilder<PacketDispatche
         @Override
         protected void dispatchImpl(Packet p) throws Exception {
             //noinspection unchecked
-            handlerMap.get(p.getType()).handle(p);
+            handlerMap.get(p.getType()).handle(this, p);
         }
     }
 }

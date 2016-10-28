@@ -5,8 +5,22 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
-import org.junit.matchers.JUnitMatchers;
 import org.junit.rules.ExpectedException;
+import whs.bot.common.net.dispatchers.BlockingPacketDispatcher;
+import whs.bot.common.net.dispatchers.Dispatcher;
+import whs.bot.common.net.dispatchers.PacketDispatcher;
+import whs.bot.common.net.dispatchers.SynchronousPacketDispatcher;
+import whs.bot.common.net.dispatchers.builders.AsynchronousPacketDispatcherBuilder;
+import whs.bot.common.net.dispatchers.builders.DispatcherBuilder;
+import whs.bot.common.net.dispatchers.builders.NullDispatcherBuilder;
+import whs.bot.common.net.dispatchers.builders.BlockingPacketDispatcherBuilder;
+import whs.bot.common.net.dispatchers.builders.SendingPacketDispatcherBuilder;
+import whs.bot.common.net.dispatchers.builders.SynchronousPacketDispatcherBuilder;
+import whs.bot.common.net.exceptions.BadTunnelHandshakeException;
+import whs.bot.common.net.exceptions.DispatchException;
+import whs.bot.common.net.exceptions.NoSuchTunnelException;
+import whs.bot.common.net.exceptions.PacketHandlingException;
+import whs.bot.common.net.exceptions.TunnelWasNotAcceptedException;
 import whs.bot.common.net.packets.TunnelCreatePacket;
 import whs.util.ChannelPair;
 
@@ -17,11 +31,13 @@ import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.LinkedList;
 import java.util.List;
-import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
 
 import static org.hamcrest.Matchers.isA;
-import static org.junit.Assert.*;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertThat;
+import static org.junit.Assert.assertTrue;
 
 /**
  * Created by misson20000 on 9/24/16.
@@ -83,43 +99,43 @@ public class PacketControllerTest {
     @Test
     public void canEstablishTunnel() throws Exception {
         String handshake = "Hello, World!";
-        PacketTunnel.Connection connA = controllerA.openTunnel(handshake.getBytes(), null);
+        PacketTunnel.Connection connA = controllerA.openTunnel(handshake.getBytes(), new NullDispatcherBuilder());
         int id = connA.getId();
-        PacketTunnel.Connection connB = controllerB.connectTunnel(id, handshake.getBytes(), null);
-        PacketTunnel tunA = connA.getFuture().get();
-        PacketTunnel tunB = connB.getFuture().get();
+        PacketTunnel.Connection connB = controllerB.connectTunnel(id, handshake.getBytes(), new NullDispatcherBuilder());
+        connA.getFuture().get();
+        connB.getFuture().get();
     }
 
     @Test
     public void tunnelWaitLocalConn() throws Exception {
         String handshake = "Hello, World!";
-        PacketTunnel.Connection connA = controllerA.openTunnel(handshake.getBytes(), null);
+        PacketTunnel.Connection connA = controllerA.openTunnel(handshake.getBytes(), new NullDispatcherBuilder());
         int id = connA.getId();
         Thread.sleep(50);
-        PacketTunnel.Connection connB = controllerB.connectTunnel(id, handshake.getBytes(), null);
-        PacketTunnel tunA = connA.getFuture().get();
-        PacketTunnel tunB = connB.getFuture().get();
+        PacketTunnel.Connection connB = controllerB.connectTunnel(id, handshake.getBytes(), new NullDispatcherBuilder());
+        connA.getFuture().get();
+        connB.getFuture().get();
     }
 
     @Test
     public void badTunnelHandshakeTest() throws Exception {
-        PacketTunnel.Connection connA = controllerA.openTunnel("Foobie Bletch".getBytes(), null);
+        PacketTunnel.Connection connA = controllerA.openTunnel("Foobie Bletch".getBytes(), new NullDispatcherBuilder());
         int id = connA.getId();
         Thread.sleep(50);
-        PacketTunnel.Connection connB = controllerB.connectTunnel(id, "REEEEE".getBytes(), null);
+        PacketTunnel.Connection connB = controllerB.connectTunnel(id, "REEEEE".getBytes(), new NullDispatcherBuilder());
         expectedException.expectCause(isA(TunnelWasNotAcceptedException.class));
-        PacketTunnel tunA = connA.getFuture().get();
-        PacketTunnel tunB = connB.getFuture().get();
+        connA.getFuture().get();
+        connB.getFuture().get();
     }
 
     @Test
     public void badTunnelHandshakeTest2() throws Exception {
-        PacketTunnel.Connection connA = controllerA.openTunnel("Foobie Bletch".getBytes(), null);
+        PacketTunnel.Connection connA = controllerA.openTunnel("Foobie Bletch".getBytes(), new NullDispatcherBuilder());
         int id = connA.getId();
-        PacketTunnel.Connection connB = controllerB.connectTunnel(id, "REEEEE".getBytes(), null);
+        PacketTunnel.Connection connB = controllerB.connectTunnel(id, "REEEEE".getBytes(), new NullDispatcherBuilder());
         expectedException.expectCause(isA(BadTunnelHandshakeException.class));
-        PacketTunnel tunB = connB.getFuture().get();
-        PacketTunnel tunA = connA.getFuture().get();
+        connB.getFuture().get();
+        connA.getFuture().get();
     }
 
     @Test
@@ -127,38 +143,35 @@ public class PacketControllerTest {
         String handshake1 = "Hello, World, this is tunnel A!";
         String handshake2 = "Hello, World, this is tunnel B!";
 
-        PacketTunnel.Connection connA1 = controllerA.openTunnel(handshake1.getBytes(), null);
-        PacketTunnel.Connection connA2 = controllerA.openTunnel(handshake2.getBytes(), null);
-        PacketTunnel.Connection connB1 = controllerB.connectTunnel(connA1.getId(), handshake1.getBytes(), null);
-        PacketTunnel.Connection connB2 = controllerB.connectTunnel(connA2.getId(), handshake2.getBytes(), null);
-        PacketTunnel tunA1 = connA1.getFuture().get();
-        PacketTunnel tunB1 = connB1.getFuture().get();
-        PacketTunnel tunA2 = connA2.getFuture().get();
-        PacketTunnel tunB2 = connB2.getFuture().get();
+        PacketTunnel.Connection connA1 = controllerA.openTunnel(handshake1.getBytes(), new NullDispatcherBuilder());
+        PacketTunnel.Connection connA2 = controllerA.openTunnel(handshake2.getBytes(), new NullDispatcherBuilder());
+        PacketTunnel.Connection connB1 = controllerB.connectTunnel(connA1.getId(), handshake1.getBytes(), new NullDispatcherBuilder());
+        PacketTunnel.Connection connB2 = controllerB.connectTunnel(connA2.getId(), handshake2.getBytes(), new NullDispatcherBuilder());
+        connA1.getFuture().get();
+        connB1.getFuture().get();
+        connA2.getFuture().get();
+        connB2.getFuture().get();
     }
 
     @Test
     public void pollingDispatcher() throws Exception {
         String handshake = "beep beep, son. beep, boop.";
 
-        PollingPacketDispatcher dispatchA = new PollingPacketDispatcher();
-        PollingPacketDispatcher dispatchB = new PollingPacketDispatcher();
+        BlockingPacketDispatcherBuilder dispatchBuilder = new BlockingPacketDispatcherBuilder();
 
-        dispatchA.addPacket(4, TestPacket.getReader());
-        dispatchB.addPacket(4, TestPacket.getReader());
-        dispatchA.addPacket(5, TestPacket2.getReader());
-        dispatchB.addPacket(5, TestPacket2.getReader());
+        dispatchBuilder.packet(4, TestPacket.getReader());
+        dispatchBuilder.packet(5, TestPacket2.getReader());
 
-        PacketTunnel.Connection connA = controllerA.openTunnel(handshake.getBytes(), dispatchA.getAsDispatcher());
+        PacketTunnel.Connection<BlockingPacketDispatcher> connA = controllerA.openTunnel(handshake.getBytes(), dispatchBuilder);
         int id = connA.getId();
-        PacketTunnel.Connection connB = controllerB.connectTunnel(id, handshake.getBytes(), dispatchB.getAsDispatcher());
-        PacketTunnel tunA = connA.getFuture().get();
-        PacketTunnel tunB = connB.getFuture().get();
+        PacketTunnel.Connection<BlockingPacketDispatcher> connB = controllerB.connectTunnel(id, handshake.getBytes(), dispatchBuilder);
+        BlockingPacketDispatcher dispatchA = connA.getFuture().get();
+        BlockingPacketDispatcher dispatchB = connB.getFuture().get();
 
         Packet packet;
 
-        tunA.send(new TestPacket(400));
-        tunA.send(new TestPacket2(800));
+        dispatchA.send(new TestPacket(400));
+        dispatchA.send(new TestPacket2(800));
         while((packet = dispatchB.poll()) == null) {}
         assertThat(packet, Matchers.instanceOf(TestPacket.class));
         assertEquals(((TestPacket) packet).getTestValue(), 400);
@@ -166,8 +179,8 @@ public class PacketControllerTest {
         assertThat(packet, Matchers.instanceOf(TestPacket2.class));
         assertEquals(((TestPacket2) packet).getTestValue(), 800);
 
-        tunB.send(new TestPacket(500));
-        tunB.send(new TestPacket2(900));
+        dispatchB.send(new TestPacket(500));
+        dispatchB.send(new TestPacket2(900));
         while((packet = dispatchA.poll()) == null) {}
         assertThat(packet, Matchers.instanceOf(TestPacket.class));
         assertEquals(((TestPacket) packet).getTestValue(), 500);
@@ -180,24 +193,21 @@ public class PacketControllerTest {
     public void pollingDispatcherExplicitTunID() throws Exception {
         String handshake = "beep beep, son. beep, boop.";
 
-        PollingPacketDispatcher dispatchA = new PollingPacketDispatcher();
-        PollingPacketDispatcher dispatchB = new PollingPacketDispatcher();
+        BlockingPacketDispatcherBuilder dispatchBuilder = new BlockingPacketDispatcherBuilder();
 
-        dispatchA.addPacket(4, TestPacket.getReader());
-        dispatchB.addPacket(4, TestPacket.getReader());
-        dispatchA.addPacket(5, TestPacket2.getReader());
-        dispatchB.addPacket(5, TestPacket2.getReader());
+        dispatchBuilder.packet(4, TestPacket.getReader());
+        dispatchBuilder.packet(5, TestPacket2.getReader());
 
-        PacketTunnel.Connection connA = controllerA.openTunnel(80, handshake.getBytes(), dispatchA.getAsDispatcher());
+        PacketTunnel.Connection<BlockingPacketDispatcher> connA = controllerA.openTunnel(80, handshake.getBytes(), dispatchBuilder);
         assertEquals(connA.getId(), 80);
-        PacketTunnel.Connection connB = controllerB.connectTunnel(80, handshake.getBytes(), dispatchB.getAsDispatcher());
-        PacketTunnel tunA = connA.getFuture().get();
-        PacketTunnel tunB = connB.getFuture().get();
+        PacketTunnel.Connection<BlockingPacketDispatcher> connB = controllerB.connectTunnel(80, handshake.getBytes(), dispatchBuilder);
+        BlockingPacketDispatcher dispatchA = connA.getFuture().get();
+        BlockingPacketDispatcher dispatchB = connB.getFuture().get();
 
         Packet packet;
 
-        tunA.send(new TestPacket(400));
-        tunA.send(new TestPacket2(800));
+        dispatchA.send(new TestPacket(400));
+        dispatchA.send(new TestPacket2(800));
         while((packet = dispatchB.poll()) == null) {}
         assertThat(packet, Matchers.instanceOf(TestPacket.class));
         assertEquals(((TestPacket) packet).getTestValue(), 400);
@@ -205,8 +215,8 @@ public class PacketControllerTest {
         assertThat(packet, Matchers.instanceOf(TestPacket2.class));
         assertEquals(((TestPacket2) packet).getTestValue(), 800);
 
-        tunB.send(new TestPacket(500));
-        tunB.send(new TestPacket2(900));
+        dispatchB.send(new TestPacket(500));
+        dispatchB.send(new TestPacket2(900));
         while((packet = dispatchA.poll()) == null) {}
         assertThat(packet, Matchers.instanceOf(TestPacket.class));
         assertEquals(((TestPacket) packet).getTestValue(), 500);
@@ -219,19 +229,19 @@ public class PacketControllerTest {
     public void badDispatch() throws Exception {
         String handshake = "to dispatch, or not to dispatch?";
 
-        PollingPacketDispatcher dispatchA = new PollingPacketDispatcher();
-        PollingPacketDispatcher dispatchB = new PollingPacketDispatcher();
+        DispatcherBuilder<PacketDispatcher> dispatchBuilderA = new SendingPacketDispatcherBuilder();
+        BlockingPacketDispatcherBuilder dispatchBuilderB = new BlockingPacketDispatcherBuilder();
 
-        dispatchB.addPacket(5, TestPacket2.getReader());
+        dispatchBuilderB.packet(5, TestPacket2.getReader());
 
-        PacketTunnel.Connection connA = controllerA.openTunnel(handshake.getBytes(), dispatchA.getAsDispatcher());
+        PacketTunnel.Connection<PacketDispatcher> connA = controllerA.openTunnel(handshake.getBytes(), dispatchBuilderA);
         int id = connA.getId();
-        PacketTunnel.Connection connB = controllerB.connectTunnel(id, handshake.getBytes(), dispatchB.getAsDispatcher());
-        PacketTunnel tunA = connA.getFuture().get();
-        PacketTunnel tunB = connB.getFuture().get();
+        PacketTunnel.Connection<BlockingPacketDispatcher> connB = controllerB.connectTunnel(id, handshake.getBytes(), dispatchBuilderB);
+        PacketDispatcher dispatchA = connA.getFuture().get();
+        BlockingPacketDispatcher dispatchB = connB.getFuture().get();
 
-        tunA.send(new TestPacket(5));
-        tunA.send(new TestPacket2(6));
+        dispatchA.send(new TestPacket(5));
+        dispatchA.send(new TestPacket2(6));
 
         Packet packet;
         while((packet = dispatchB.poll()) == null) {}
@@ -245,23 +255,22 @@ public class PacketControllerTest {
     public void synchronousDispatcher() throws Exception {
         String handshake = "a shoe, a hue, and a fu manchu.";
 
-        SynchronousPacketDispatcher dispatchA = new SynchronousPacketDispatcher();
-        PollingPacketDispatcher dispatchB = new PollingPacketDispatcher();
-        dispatchB.addPacket(5, TestPacket2.getReader());
-
-        PacketTunnel.Connection connA = controllerA.openTunnel(handshake.getBytes(), dispatchA.getAsDispatcher());
-        int id = connA.getId();
-        PacketTunnel.Connection connB = controllerB.connectTunnel(id, handshake.getBytes(), dispatchB.getAsDispatcher());
-        PacketTunnel tunA = connA.getFuture().get();
-        PacketTunnel tunB = connB.getFuture().get();
-
-        dispatchA.addPacket(4, TestPacket.getReader(), (tp) -> {
+        SynchronousPacketDispatcherBuilder dispatchBuilderA = new SynchronousPacketDispatcherBuilder();
+        BlockingPacketDispatcherBuilder dispatchBuilderB = new BlockingPacketDispatcherBuilder();
+        dispatchBuilderA.packet(4, TestPacket.getReader(), (dispatch, tp) -> {
             assertEquals(tp.getTestValue(), 404);
-            tunA.send(new TestPacket2(505));
+            dispatch.send(new TestPacket2(505));
         });
+        dispatchBuilderB.packet(5, TestPacket2.getReader());
+
+        PacketTunnel.Connection<SynchronousPacketDispatcher> connA = controllerA.openTunnel(handshake.getBytes(), dispatchBuilderA);
+        int id = connA.getId();
+        PacketTunnel.Connection<BlockingPacketDispatcher> connB = controllerB.connectTunnel(id, handshake.getBytes(), dispatchBuilderB);
+        SynchronousPacketDispatcher dispatchA = connA.getFuture().get();
+        BlockingPacketDispatcher dispatchB = connB.getFuture().get();
 
         Packet packet;
-        tunB.send(new TestPacket(404));
+        dispatchB.send(new TestPacket(404));
         while(!dispatchA.dispatch()) { }
         while((packet = dispatchB.poll()) == null) {}
         assertThat(packet, Matchers.instanceOf(TestPacket2.class));
@@ -272,23 +281,22 @@ public class PacketControllerTest {
     public void synchronousDispatcherExceptionTest() throws Exception {
         String handshake = "In capitalist America, BANK ROBS YOU!";
 
-        SynchronousPacketDispatcher dispatchA = new SynchronousPacketDispatcher();
-        PollingPacketDispatcher dispatchB = new PollingPacketDispatcher();
-        dispatchB.addPacket(5, TestPacket2.getReader());
-
-        PacketTunnel.Connection connA = controllerA.openTunnel(handshake.getBytes(), dispatchA.getAsDispatcher());
-        int id = connA.getId();
-        PacketTunnel.Connection connB = controllerB.connectTunnel(id, handshake.getBytes(), dispatchB.getAsDispatcher());
-        PacketTunnel tunA = connA.getFuture().get();
-        PacketTunnel tunB = connB.getFuture().get();
-
-        dispatchA.addPacket(4, TestPacket.getReader(), (tp) -> {
+        SynchronousPacketDispatcherBuilder dispatchBuilderA = new SynchronousPacketDispatcherBuilder();
+        BlockingPacketDispatcherBuilder dispatchBuilderB = new BlockingPacketDispatcherBuilder();
+        dispatchBuilderA.packet(4, TestPacket.getReader(), (dispatch, tp) -> {
             assertEquals(tp.getTestValue(), 404);
             throw new TestException();
         });
+        dispatchBuilderB.packet(5, TestPacket2.getReader());
+
+        PacketTunnel.Connection<SynchronousPacketDispatcher> connA = controllerA.openTunnel(handshake.getBytes(), dispatchBuilderA);
+        int id = connA.getId();
+        PacketTunnel.Connection<BlockingPacketDispatcher> connB = controllerB.connectTunnel(id, handshake.getBytes(), dispatchBuilderB);
+        SynchronousPacketDispatcher dispatchA = connA.getFuture().get();
+        BlockingPacketDispatcher dispatchB = connB.getFuture().get();
 
         Packet packet;
-        tunB.send(new TestPacket(404));
+        dispatchB.send(new TestPacket(404));
         expectedException.expect(PacketHandlingException.class);
         expectedException.expectCause(isA(TestException.class));
         while(!dispatchA.dispatch()) { }
@@ -298,23 +306,22 @@ public class PacketControllerTest {
     public void asyncDispatcherTest() throws Exception {
         String handshake = "Pete and Repete are in a boat. Pete jumps out. Who is left in the boat?";
 
-        AsynchronousPacketDispatcher dispatchA = new AsynchronousPacketDispatcher();
-        PollingPacketDispatcher dispatchB = new PollingPacketDispatcher();
-        dispatchB.addPacket(5, TestPacket2.getReader());
-
-        PacketTunnel.Connection connA = controllerA.openTunnel(handshake.getBytes(), dispatchA.getAsDispatcher());
-        int id = connA.getId();
-        PacketTunnel.Connection connB = controllerB.connectTunnel(id, handshake.getBytes(), dispatchB.getAsDispatcher());
-        PacketTunnel tunA = connA.getFuture().get();
-        PacketTunnel tunB = connB.getFuture().get();
-
-        dispatchA.addPacket(4, TestPacket.getReader(), (tp) -> {
+        AsynchronousPacketDispatcherBuilder dispatchBuilderA = new AsynchronousPacketDispatcherBuilder();
+        BlockingPacketDispatcherBuilder dispatchBuilderB = new BlockingPacketDispatcherBuilder();
+        dispatchBuilderA.packet(4, TestPacket.getReader(), (dispatch, tp) -> {
             assertEquals(tp.getTestValue(), 404);
-            tunA.send(new TestPacket2(505));
+            dispatch.send(new TestPacket2(505));
         });
+        dispatchBuilderB.packet(5, TestPacket2.getReader());
+
+        PacketTunnel.Connection<PacketDispatcher> connA = controllerA.openTunnel(handshake.getBytes(), dispatchBuilderA);
+        int id = connA.getId();
+        PacketTunnel.Connection<BlockingPacketDispatcher> connB = controllerB.connectTunnel(id, handshake.getBytes(), dispatchBuilderB);
+        PacketDispatcher dispatchA = connA.getFuture().get();
+        BlockingPacketDispatcher dispatchB = connB.getFuture().get();
 
         Packet packet;
-        tunB.send(new TestPacket(404));
+        dispatchB.send(new TestPacket(404));
         while((packet = dispatchB.poll()) == null) {}
         assertThat(packet, Matchers.instanceOf(TestPacket2.class));
         assertEquals(((TestPacket2) packet).getTestValue(), 505);
@@ -324,24 +331,23 @@ public class PacketControllerTest {
     public void asyncDispatcherExceptionTest() throws Exception {
         String handshake = "Pete and Repete are in a boat. Pete jumps out. Who is left in the boat?";
 
-        AsynchronousPacketDispatcher dispatchA = new AsynchronousPacketDispatcher();
-        PollingPacketDispatcher dispatchB = new PollingPacketDispatcher();
-        dispatchB.addPacket(5, TestPacket2.getReader());
-
-        PacketTunnel.Connection connA = controllerA.openTunnel(handshake.getBytes(), dispatchA.getAsDispatcher());
-        int id = connA.getId();
-        PacketTunnel.Connection connB = controllerB.connectTunnel(id, handshake.getBytes(), dispatchB.getAsDispatcher());
-        PacketTunnel tunA = connA.getFuture().get();
-        PacketTunnel tunB = connB.getFuture().get();
-
-        dispatchA.addPacket(4, TestPacket.getReader(), (tp) -> {
+        AsynchronousPacketDispatcherBuilder dispatchBuilderA = new AsynchronousPacketDispatcherBuilder();
+        BlockingPacketDispatcherBuilder dispatchBuilderB = new BlockingPacketDispatcherBuilder();
+        dispatchBuilderA.packet(4, TestPacket.getReader(), (dispatch, tp) -> {
             assertEquals(tp.getTestValue(), 404);
-            tunA.send(new TestPacket2(505));
+            dispatch.send(new TestPacket2(505));
             throw new TestException();
         });
+        dispatchBuilderB.packet(5, TestPacket2.getReader());
+
+        PacketTunnel.Connection<PacketDispatcher> connA = controllerA.openTunnel(handshake.getBytes(), dispatchBuilderA);
+        int id = connA.getId();
+        PacketTunnel.Connection<BlockingPacketDispatcher> connB = controllerB.connectTunnel(id, handshake.getBytes(), dispatchBuilderB);
+        PacketDispatcher dispatchA = connA.getFuture().get();
+        BlockingPacketDispatcher dispatchB = connB.getFuture().get();
 
         Packet packet;
-        tunB.send(new TestPacket(404));
+        dispatchB.send(new TestPacket(404));
         while((packet = dispatchB.poll()) == null) {}
         assertThat(packet, Matchers.instanceOf(TestPacket2.class));
         assertEquals(((TestPacket2) packet).getTestValue(), 505);
@@ -374,11 +380,11 @@ public class PacketControllerTest {
         }, new TestPacket(999)));
 
         String handshake = "Hello, World!";
-        PacketTunnel.Connection connA = controllerA.openTunnel(handshake.getBytes(), null);
+        PacketTunnel.Connection<Dispatcher> connA = controllerA.openTunnel(handshake.getBytes(), new NullDispatcherBuilder());
         int id = connA.getId();
-        PacketTunnel.Connection connB = controllerB.connectTunnel(id, handshake.getBytes(), null);
-        PacketTunnel tunA = connA.getFuture().get();
-        PacketTunnel tunB = connB.getFuture().get();
+        PacketTunnel.Connection<Dispatcher> connB = controllerB.connectTunnel(id, handshake.getBytes(), new NullDispatcherBuilder());
+        Dispatcher dispatchA = connA.getFuture().get();
+        Dispatcher dispatchB = connB.getFuture().get();
 
         assertThat(controllerB.getWarningQueue(), Matchers.hasItem(Matchers.instanceOf(NoSuchTunnelException.class)));
         controllerB.getWarningQueue().clear();
@@ -409,8 +415,8 @@ public class PacketControllerTest {
             }
         }, new TunnelCreatePacket((short) 80, handshake.getBytes())));
 
-        PacketTunnel.Connection connB = controllerB.connectTunnel(80, handshake.getBytes(), null);
-        PacketTunnel tunB = connB.getFuture().get();
+        PacketTunnel.Connection<Dispatcher> connB = controllerB.connectTunnel(80, handshake.getBytes(), new NullDispatcherBuilder());
+        Dispatcher dispatchB = connB.getFuture().get();
         expectedException.expect(PacketHandlingException.class);
         expectedException.expectCause(isA(NoSuchTunnelException.class));
         throw controllerA.getWarningQueue().take();
