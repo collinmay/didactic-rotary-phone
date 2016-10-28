@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="ProjectModuleManager">
+    <modules>
+      <module fileurl="file://$PROJECT_DIR$/common/common.iml" filepath="$PROJECT_DIR$/common/common.iml" />
+      <module fileurl="file://$PROJECT_DIR$/desktopdriver/desktopdriver.iml" filepath="$PROJECT_DIR$/desktopdriver/desktopdriver.iml" />
+      <module fileurl="file://$PROJECT_DIR$/libdriver/libdriver.iml" filepath="$PROJECT_DIR$/libdriver/libdriver.iml" />
+      <module fileurl="file://$PROJECT_DIR$/librobot/librobot.iml" filepath="$PROJECT_DIR$/librobot/librobot.iml" />
+      <module fileurl="file://$PROJECT_DIR$/robotd/robotd.iml" filepath="$PROJECT_DIR$/robotd/robotd.iml" />
+    </modules>
+  </component>
+</project>
